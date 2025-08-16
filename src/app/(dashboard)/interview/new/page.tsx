@@ -1,10 +1,10 @@
 import { Suspense } from "react";
-import InterviewRoom from "@/components/InterviewRoom";
+import AIInterviewRoom from "@/components/AIInterviewRoom";
 
 export default function NewInterviewPage() {
   return (
-    <Suspense fallback={<div>Loading interview...</div>}>
-      <InterviewRoom />
+    <Suspense fallback={<div>Loading AI interview...</div>}>
+      <AIInterviewRoom />
     </Suspense>
   );
 }
