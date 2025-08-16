@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
+import { Eye } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Printer, AlertCircle, CheckCircle, Lightbulb } from "lucide-react"
@@ -24,12 +25,25 @@ const score = {
   }
 }
 
+const behaviorMetrics = {
+  eyeContactPct: 78,
+  blinkRatePerMin: 12,
+  headStability: 0.002,
+  lean: "neutral",
+  fidgetScore: 0.015,
+  attentionScore: 85
+};
+
 const behaviorData = [
   { name: '0-1m', value: 95 },
   { name: '1-2m', value: 90 },
   { name: '2-3m', value: 98 },
   { name: '3-4m', value: 85 },
   { name: '4-5m', value: 91 },
+  { name: 'Eye Contact', value: behaviorMetrics.eyeContactPct },
+  { name: 'Attention', value: behaviorMetrics.attentionScore },
+  { name: 'Stability', value: Math.max(0, 100 - behaviorMetrics.headStability * 10000) },
+  { name: 'Engagement', value: behaviorMetrics.lean === "neutral" ? 100 : 70 },
 ]
 
 const transcript = [
@@ -106,17 +120,41 @@ export default function ReportPage({ params }: { params: { id: string } }) {
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Behavior Signals</CardTitle>
-              <CardDescription>Attention score over time.</CardDescription>
+              <CardTitle className="flex items-center gap-2">
+                <Eye className="h-5 w-5" />
+                Behavioral Insights
+              </CardTitle>
+              <CardDescription>Computer vision analysis during interview</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={behaviorData}>
-                  <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} />
-                  <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `${value}%`} />
+                  <XAxis dataKey="name" fontSize={12} tickLine={false} axisLine={false} />
+                  <YAxis fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `${value}%`} />
                   <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
+              
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Eye Contact:</span>
+                  <span className="font-medium">{behaviorMetrics.eyeContactPct}%</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Blink Rate:</span>
+                  <span className="font-medium">{behaviorMetrics.blinkRatePerMin}/min</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Posture:</span>
+                  <Badge variant="outline" className="capitalize">{behaviorMetrics.lean}</Badge>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Stability:</span>
+                  <Badge variant="outline">
+                    {behaviorMetrics.headStability < 0.01 ? "Excellent" : "Good"}
+                  </Badge>
+                </div>
+              </div>
             </CardContent>
           </Card>
 
