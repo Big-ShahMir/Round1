@@ -97,3 +97,4 @@ Before deploying to production:
 - **Firestore errors**: Verify your security rules and database location
 - **Environment variables**: Ensure `.env.local` is in your project root and variables start with `NEXT_PUBLIC_`
 - **Build errors**: Make sure all Firebase dependencies are installed (`npm install firebase`)
+

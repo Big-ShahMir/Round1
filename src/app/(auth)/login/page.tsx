@@ -35,20 +35,54 @@ export default function LoginPage() {
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Basic validation
+    if (!signInData.email.trim() || !signInData.password.trim()) {
+      toast({
+        title: "Error",
+        description: "Please fill in all fields.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
     
     try {
+      console.log('Attempting sign in with:', signInData.email);
       await signIn(signInData.email, signInData.password);
+      
+      console.log('Sign in successful');
       toast({
         title: "Success!",
         description: "You have been signed in successfully.",
       });
-      router.push('/');
+      
+      // Small delay to ensure auth state updates, then redirect
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 1000);
+      
     } catch (error: any) {
       console.error('Sign in error:', error);
+      
+      let errorMessage = "Failed to sign in. Please try again.";
+      
+      if (error.code === 'auth/user-not-found') {
+        errorMessage = "No account found with this email address.";
+      } else if (error.code === 'auth/wrong-password') {
+        errorMessage = "Incorrect password. Please try again.";
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = "Invalid email address format.";
+      } else if (error.code === 'auth/too-many-requests') {
+        errorMessage = "Too many failed attempts. Please try again later.";
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       toast({
         title: "Error",
-        description: error.message || "Failed to sign in.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -58,6 +92,16 @@ export default function LoginPage() {
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Basic validation
+    if (!signUpData.email.trim() || !signUpData.password.trim() || !signUpData.displayName.trim()) {
+      toast({
+        title: "Error",
+        description: "Please fill in all required fields.",
+        variant: "destructive",
+      });
+      return;
+    }
     
     if (signUpData.password !== signUpData.confirmPassword) {
       toast({
@@ -108,16 +152,29 @@ export default function LoginPage() {
         description: "Account created successfully. You are now signed in.",
       });
       
-      // Wait a moment for the auth state to update
+      // Small delay to ensure auth state updates, then redirect
       setTimeout(() => {
-        router.push('/');
-      }, 1500);
+        window.location.href = '/';
+      }, 1000);
       
     } catch (error: any) {
       console.error('Signup error:', error);
+      
+      let errorMessage = "Failed to create account. Please try again.";
+      
+      if (error.code === 'auth/email-already-in-use') {
+        errorMessage = "An account with this email already exists.";
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = "Invalid email address format.";
+      } else if (error.code === 'auth/weak-password') {
+        errorMessage = "Password is too weak. Please choose a stronger password.";
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       toast({
         title: "Error",
-        description: error.message || "Failed to create account.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {

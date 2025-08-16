@@ -54,3 +54,4 @@ export default function ProtectedRoute({
   // Render children if authenticated and has required role
   return <>{children}</>;
 }
+

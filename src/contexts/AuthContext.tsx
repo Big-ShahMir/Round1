@@ -47,13 +47,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function signIn(email: string, password: string) {
     try {
+      console.log('AuthContext: Starting sign in process for:', email);
+      
       const result = await signInWithEmailAndPassword(auth, email, password);
-      // Fetch user profile from Firestore
+      console.log('AuthContext: Firebase auth successful, user ID:', result.user.uid);
+      
+      // Fetch user profile from Firestore and update local state immediately
+      console.log('AuthContext: Fetching user profile from Firestore...');
       const userDoc = await getDoc(doc(db, 'users', result.user.uid));
+      
       if (userDoc.exists()) {
-        setUserProfile(userDoc.data() as UserProfile);
+        const profileData = userDoc.data() as UserProfile;
+        console.log('AuthContext: User profile found:', profileData);
+        setUserProfile(profileData);
+        console.log('AuthContext: Local state updated with user profile');
+      } else {
+        console.warn('AuthContext: User profile not found in Firestore for:', result.user.uid);
+        // Try to create a basic profile if it doesn't exist
+        const basicProfile: UserProfile = {
+          uid: result.user.uid,
+          email: result.user.email!,
+          displayName: result.user.displayName || 'User',
+          role: 'interviewee', // Default role
+          createdAt: new Date()
+        };
+        console.log('AuthContext: Creating basic profile:', basicProfile);
+        setUserProfile(basicProfile);
+        
+        // Save to Firestore
+        try {
+          await setDoc(doc(db, 'users', result.user.uid), basicProfile);
+          console.log('AuthContext: Basic profile saved to Firestore');
+        } catch (saveError) {
+          console.error('AuthContext: Error saving basic profile:', saveError);
+        }
       }
+      
+      console.log('AuthContext: Sign in process completed successfully');
+      
     } catch (error) {
+      console.error('AuthContext: Sign in error:', error);
       throw error;
     }
   }
@@ -144,46 +177,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
+    console.log('AuthContext: Setting up auth state listener...');
+    
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      console.log('AuthContext: Auth state changed:', user ? `User ID: ${user.uid}` : 'No user');
       setCurrentUser(user);
 
       if (user) {
         // Fetch user profile from Firestore
         try {
-          console.log('Fetching user profile for:', user.uid);
+          console.log('AuthContext: Fetching user profile for:', user.uid);
           const userDoc = await getDoc(doc(db, 'users', user.uid));
           if (userDoc.exists()) {
             const profileData = userDoc.data() as UserProfile;
-            console.log('User profile found:', profileData);
+            console.log('AuthContext: User profile found:', profileData);
             setUserProfile(profileData);
           } else {
-            console.log('User profile not found in Firestore for:', user.uid);
+            console.log('AuthContext: User profile not found in Firestore for:', user.uid);
             // Don't set userProfile to null immediately, give it a moment
             setTimeout(async () => {
               try {
                 const retryDoc = await getDoc(doc(db, 'users', user.uid));
                 if (retryDoc.exists()) {
                   const retryProfileData = retryDoc.data() as UserProfile;
-                  console.log('User profile found on retry:', retryProfileData);
+                  console.log('AuthContext: User profile found on retry:', retryProfileData);
                   setUserProfile(retryProfileData);
                 } else {
-                  console.log('User profile still not found after retry');
+                  console.log('AuthContext: User profile still not found after retry');
                   setUserProfile(null);
                 }
               } catch (retryError) {
-                console.error('Retry error:', retryError);
+                console.error('AuthContext: Retry error:', retryError);
                 setUserProfile(null);
               }
             }, 1000);
           }
         } catch (error: any) {
-          console.error('Error fetching user profile:', error);
+          console.error('AuthContext: Error fetching user profile:', error);
           // If we get an offline error, try to use the local profile if available
           if (error && typeof error === 'object' && 'code' in error && error.code === 'failed-precondition') {
-            console.log('Firestore offline, using local profile if available');
+            console.log('AuthContext: Firestore offline, using local profile if available');
             // Don't set userProfile to null here, keep the existing one
           } else if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string' && error.message.includes('offline')) {
-            console.log('Firestore offline, using local profile if available');
+            console.log('AuthContext: Firestore offline, using local profile if available');
             // Don't set userProfile to null here, keep the existing one
           } else {
             // For other errors, wait a bit and retry
@@ -192,23 +228,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 const retryDoc = await getDoc(doc(db, 'users', user.uid));
                 if (retryDoc.exists()) {
                   const retryProfileData = retryDoc.data() as UserProfile;
-                  console.log('User profile found on retry after error:', retryProfileData);
+                  console.log('AuthContext: User profile found on retry after error:', retryProfileData);
                   setUserProfile(retryProfileData);
                 } else {
-                  console.log('User profile not found after error retry');
+                  console.log('AuthContext: User profile not found after error retry');
                   setUserProfile(null);
                 }
               } catch (retryError) {
-                console.error('Retry error after initial error:', retryError);
+                console.error('AuthContext: Retry error after initial error:', retryError);
                 setUserProfile(null);
               }
             }, 2000);
           }
         }
       } else {
+        console.log('AuthContext: No user, clearing user profile');
         setUserProfile(null);
       }
 
+      console.log('AuthContext: Setting loading to false');
       setLoading(false);
     });
 
