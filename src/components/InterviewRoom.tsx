@@ -1,4 +1,5 @@
-"use client";
+"use client"
+
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -7,10 +8,29 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Mic, MicOff, Camera, CameraOff } from "lucide-react";
 import { loadCV, computeFrameFeatures, aggregate, type FrameStats } from "@/lib/cv";
+import { useAuth } from '@/contexts/AuthContext';
+import { addDoc, collection, Timestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { toast } from '@/hooks/use-toast';
 
-export default function InterviewRoom() {
+interface JobDetails {
+  id: string;
+  title: string;
+  company: string;
+  location: string;
+  salary: string;
+  description: string;
+  requirements: string;
+}
+
+interface InterviewRoomProps {
+  jobDetails: JobDetails;
+}
+
+export default function InterviewRoom({ jobDetails }: InterviewRoomProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { currentUser, userProfile } = useAuth();
   const jobId = searchParams.get('jobId');
   
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -21,16 +41,116 @@ export default function InterviewRoom() {
   const [cvModels, setCvModels] = useState<any>(null);
   const [recorder, setRecorder] = useState<any>(null);
   const [cameraEnabled, setCameraEnabled] = useState(true);
-  const [micEnabled, setMicEnabled] = useState(true);
+  const [micEnabled, setMicEnabled] = useState(false);
+  const [answers, setAnswers] = useState<string[]>([]);
+  const [isCompleting, setIsCompleting] = useState(false);
 
-  const questions = [
-    "Tell me about yourself and why you're interested in this role.",
-    "Describe a challenging project you've worked on recently.",
-    "How do you handle working under pressure or tight deadlines?",
-    "What are your greatest strengths and how do they apply to this position?",
-    "Where do you see yourself in 5 years?",
-    "Do you have any questions for us?"
-  ];
+  // Generate job-specific questions based on the job details
+  const generateJobSpecificQuestions = (): string[] => {
+    const baseQuestions = [
+      "Tell me about yourself and why you're interested in this role.",
+      "Describe a challenging project you've worked on recently.",
+      "How do you handle working under pressure or tight deadlines?",
+      "What are your greatest strengths and how do they apply to this position?",
+      "Where do you see yourself in 5 years?",
+      "Do you have any questions for us?"
+    ];
+
+    // Add job-specific questions based on requirements
+    const requirements = jobDetails.requirements.toLowerCase();
+    const jobTitle = jobDetails.title.toLowerCase();
+    const specificQuestions: string[] = [];
+
+    // Frontend/UI Development Questions
+    if (requirements.includes('javascript') || requirements.includes('js') || jobTitle.includes('frontend') || jobTitle.includes('ui')) {
+      specificQuestions.push(
+        "Can you explain the difference between var, let, and const in JavaScript?",
+        "How do you handle asynchronous operations in JavaScript?",
+        "What are closures and how do you use them?",
+        "How do you optimize website performance?",
+        "What's your experience with responsive design?"
+      );
+    }
+
+    if (requirements.includes('react') || jobTitle.includes('react')) {
+      specificQuestions.push(
+        "What are React hooks and how do you use them?",
+        "Can you explain the component lifecycle in React?",
+        "How do you manage state in React applications?",
+        "What's the difference between controlled and uncontrolled components?"
+      );
+    }
+
+    // Backend Development Questions
+    if (requirements.includes('node.js') || requirements.includes('nodejs') || jobTitle.includes('backend')) {
+      specificQuestions.push(
+        "What is the event loop in Node.js?",
+        "How do you handle errors in Node.js applications?",
+        "What are the benefits of using Node.js for backend development?",
+        "How do you implement authentication and authorization?"
+      );
+    }
+
+    if (requirements.includes('python') || jobTitle.includes('python')) {
+      specificQuestions.push(
+        "What are Python decorators and how do you use them?",
+        "How do you handle exceptions in Python?",
+        "What's the difference between lists and tuples in Python?",
+        "How do you work with virtual environments?"
+      );
+    }
+
+    // Add questions based on job description keywords
+    const description = jobDetails.description.toLowerCase();
+    if (description.includes('team') || description.includes('collaboration')) {
+      specificQuestions.push(
+        "How do you handle conflicts within a team?",
+        "Describe a time when you had to work with a difficult team member.",
+        "What's your approach to mentoring junior developers?"
+      );
+    }
+
+    if (description.includes('agile') || description.includes('scrum')) {
+      specificQuestions.push(
+        "How do you handle changing requirements in an agile environment?",
+        "What's your experience with sprint planning and retrospectives?",
+        "How do you estimate story points for user stories?"
+      );
+    }
+
+    // Add company-specific questions
+    if (jobDetails.company) {
+      specificQuestions.push(
+        `What interests you about working at ${jobDetails.company}?`,
+        `How do you think your experience aligns with ${jobDetails.company}'s mission?`
+      );
+    }
+
+    // Combine and shuffle questions, but ensure we get a good mix
+    const allQuestions = [...baseQuestions, ...specificQuestions];
+    
+    // Create a unique shuffle for each job using the job title and company
+    const uniqueSeed = `${jobDetails.title}-${jobDetails.company}`.toLowerCase();
+    const seedNumber = uniqueSeed.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    
+    // Create a seeded random shuffle
+    const shuffled = [...allQuestions];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = (seedNumber + i) % (i + 1);
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    
+    // Return 8-10 questions, ensuring we have a good mix of base and specific questions
+    const baseCount = Math.min(5, baseQuestions.length);
+    const specificCount = Math.min(5, specificQuestions.length);
+    
+    return [
+      ...shuffled.slice(0, baseCount),
+      ...shuffled.slice(baseQuestions.length, baseQuestions.length + specificCount)
+    ];
+  };
+
+  const [questions] = useState<string[]>(() => generateJobSpecificQuestions());
 
   // Initialize camera and CV models
   useEffect(() => {
@@ -136,18 +256,90 @@ export default function InterviewRoom() {
       console.log("Audio blob:", audioBlob);
       console.log("CV summary:", cvSummary);
       
+      // Store the current answer (for now, we'll use a placeholder)
+      // In a real implementation, you'd use speech-to-text to convert audio to text
+      const currentAnswer = `Answer to question ${currentQuestion + 1} - ${cvSummary ? `Eye contact: ${cvSummary.eyeContactPct.toFixed(0)}%, Posture: ${cvSummary.lean}` : 'No behavioral data'}`;
+      setAnswers(prev => [...prev, currentAnswer]);
+      
       // Move to next question or complete interview
       if (currentQuestion < questions.length - 1) {
         setCurrentQuestion(prev => prev + 1);
       } else {
-        // Interview complete - redirect to report
-        router.push(`/interview/int-${Date.now()}/report`);
+        // Interview complete - save results and redirect
+        await completeInterview();
       }
       setRecorder(null);
       
     } catch (error) {
       console.error("Failed to stop recording:", error);
     }
+  };
+
+  const completeInterview = async () => {
+    if (!currentUser || !userProfile) return;
+    
+    setIsCompleting(true);
+    try {
+      const cvSummary = aggregate(features);
+      
+      // Calculate behavioral scores
+      const behavioralScore = cvSummary ? calculateBehavioralScore(cvSummary) : 0;
+      
+      // Create interview result data
+      const interviewResult = {
+        jobId: jobDetails.id,
+        jobTitle: jobDetails.title,
+        company: jobDetails.company,
+        candidateId: currentUser.uid,
+        candidateName: userProfile.displayName || 'Unknown',
+        candidateEmail: currentUser.email,
+        questions: questions,
+        answers: answers,
+        behavioralData: cvSummary,
+        behavioralScore: behavioralScore,
+        completedAt: Timestamp.now(),
+        status: 'completed',
+        recruiterId: jobDetails.id, // This will help recruiters find interviews for their jobs
+        duration: features.length > 0 ? features[features.length - 1].durSec : 0
+      };
+
+      // Save to Firestore
+      await addDoc(collection(db, 'interviews'), interviewResult);
+      
+      toast({
+        title: "Interview Completed!",
+        description: "Your interview results have been saved and sent to the recruiter.",
+      });
+
+      // Redirect to completion page
+      router.push(`/interview/${jobDetails.id}/complete`);
+      
+    } catch (error) {
+      console.error("Failed to save interview results:", error);
+      toast({
+        title: "Error",
+        description: "Failed to save interview results. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsCompleting(false);
+    }
+  };
+
+  const calculateBehavioralScore = (cvSummary: FrameStats): number => {
+    // Calculate a behavioral score based on CV data
+    const eyeContactScore = Math.min(cvSummary.eyeContactPct / 100, 1) * 100;
+    const postureScore = cvSummary.lean === 'neutral' ? 100 : 70;
+    const stabilityScore = Math.max(0, (1 - cvSummary.headStability * 1000)) * 100;
+    const fidgetScore = Math.max(0, (1 - cvSummary.fidgetScore * 100)) * 100;
+    
+    // Weighted average
+    return Math.round(
+      (eyeContactScore * 0.3) + 
+      (postureScore * 0.25) + 
+      (stabilityScore * 0.25) + 
+      (fidgetScore * 0.2)
+    );
   };
 
   const toggleCamera = () => {
@@ -177,7 +369,9 @@ export default function InterviewRoom() {
     <div className="container mx-auto p-6 space-y-6">
       {/* Header */}
       <div className="space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight">Round1 Interview</h1>
+        <h1 className="text-3xl font-bold tracking-tight">
+          Round1 Interview - {jobDetails.title} at {jobDetails.company}
+        </h1>
         <p className="text-muted-foreground">
           Question {currentQuestion + 1} of {questions.length}
         </p>
@@ -289,7 +483,7 @@ export default function InterviewRoom() {
               {!isRecording ? (
                 <Button
                   onClick={startRecording}
-                  disabled={!cvModels}
+                  disabled={!cvModels || isCompleting}
                   size="lg"
                   className="w-full"
                 >
@@ -319,6 +513,13 @@ export default function InterviewRoom() {
                 <p className="text-sm text-muted-foreground text-center">
                   This is the final question. You'll see your results after completion.
                 </p>
+              )}
+
+              {isCompleting && (
+                <div className="text-center py-4">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                  <p className="text-sm text-muted-foreground">Saving interview results...</p>
+                </div>
               )}
             </CardContent>
           </Card>

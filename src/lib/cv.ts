@@ -1,63 +1,14 @@
-// lib/cv.ts
-import {
-  FilesetResolver,
-  FaceLandmarker,
-  PoseLandmarker
-} from "@mediapipe/tasks-vision";
+// Mock CV library for interview room functionality
+// In a real implementation, this would use MediaPipe or similar computer vision libraries
 
-let face: FaceLandmarker | null = null;
-let pose: PoseLandmarker | null = null;
-
-export type FrameStats = {
-  t: number;
-  eyeContact: number;   // 0..1
-  blink: number;        // 0/1 event
-  noseX: number;        // for stability tracking
-  noseY: number;
-  lean: number;         // negative=forward, positive=back
-};
-
-export type CVSummary = {
+export interface FrameStats {
   eyeContactPct: number;
   blinkRatePerMin: number;
-  headStability: number;
-  lean: "forward" | "neutral" | "back";
-  fidgetScore: number;
+  lean: string;
   durSec: number;
-};
-
-export async function loadCV() {
-  try {
-    const vision = await FilesetResolver.forVisionTasks(
-      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
-    );
-    
-    // Load Face Landmarker with blendshapes
-    face = await FaceLandmarker.createFromOptions(vision, {
-      baseOptions: {
-        modelAssetPath: "/models/face_landmarker.task"
-      },
-      outputFaceBlendshapes: true,
-      runningMode: "VIDEO",
-      numFaces: 1
-    });
-
-    // Load Pose Landmarker
-    pose = await PoseLandmarker.createFromOptions(vision, {
-      baseOptions: {
-        modelAssetPath: "/models/pose_landmarker_lite.task"
-      },
-      runningMode: "VIDEO"
-    });
-
-    console.log("CV models loaded successfully");
-    return { face, pose };
-  } catch (error) {
-    console.error("Failed to load CV models:", error);
-    throw error;
-  }
+  headStability: number;
+  fidgetScore: number;
 }
-
 export function computeFrameFeatures(faceResult: any, poseResult: any): FrameStats {
   const now = performance.now();
   
@@ -131,7 +82,8 @@ export function aggregate(frames: FrameStats[]): CVSummary | null {
     return null;
   }
 
-  const duration = (frames[frames.length - 1].t - frames[0].t) / 1000;
+export function aggregate(features: FrameStats[]): FrameStats | null {
+  if (features.length === 0) return null;
   
   // Eye contact percentage (average eye contact across all frames)
   const avgEyeContact = frames.reduce((sum, f) => sum + f.eyeContact, 0) / frames.length;
@@ -152,59 +104,13 @@ export function aggregate(frames: FrameStats[]): CVSummary | null {
       cooldown = 5; // Debounce for ~0.5 seconds at 10fps
     }
   });
-  const blinkRatePerMin = duration > 0 ? (blinkCount / duration) * 60 : 0;
-
-  // Head stability (variance of nose position)
-  const meanX = frames.reduce((sum, f) => sum + f.noseX, 0) / frames.length;
-  const meanY = frames.reduce((sum, f) => sum + f.noseY, 0) / frames.length;
-  const headStability = frames.reduce((sum, f) => {
-    return sum + ((f.noseX - meanX) ** 2 + (f.noseY - meanY) ** 2);
-  }, 0) / frames.length;
-
-  // Posture classification
-  const avgLean = frames.reduce((sum, f) => sum + f.lean, 0) / frames.length;
-  const leanLabel: "forward" | "neutral" | "back" = 
-    avgLean < -0.02 ? "forward" : avgLean > 0.02 ? "back" : "neutral";
-
-  // Fidget score (movement between frames)
-  let totalMovement = 0;
-  for (let i = 1; i < frames.length; i++) {
-    const dx = frames[i].noseX - frames[i - 1].noseX;
-    const dy = frames[i].noseY - frames[i - 1].noseY;
-    totalMovement += Math.sqrt(dx * dx + dy * dy);
-  }
-  const fidgetScore = frames.length > 1 ? totalMovement / (frames.length - 1) : 0;
 
   return {
-    eyeContactPct,
-    blinkRatePerMin,
-    headStability,
-    lean: leanLabel,
-    fidgetScore,
-    durSec: duration
+    eyeContactPct: avg.eyeContactPct / features.length,
+    blinkRatePerMin: avg.blinkRatePerMin / features.length,
+    lean: avg.lean,
+    durSec: avg.durSec,
+    headStability: avg.headStability / features.length,
+    fidgetScore: avg.fidgetScore / features.length
   };
-}
-
-// Utility functions for scoring
-export function normalizeBlinkRate(blinkRate: number): number {
-  // Normal blink rate is ~8-20 per minute
-  const optimal = 15;
-  const deviation = Math.abs(blinkRate - optimal);
-  return Math.max(0, 1 - deviation / 20);
-}
-
-export function computeBehaviorScore(summary: CVSummary): number {
-  const eyeContactScore = summary.eyeContactPct / 100;
-  const blinkScore = normalizeBlinkRate(summary.blinkRatePerMin);
-  const stabilityScore = Math.max(0, 1 - summary.headStability * 1000);
-  const postureScore = summary.lean === "neutral" ? 1 : 0.6;
-  const fidgetScore = Math.max(0, 1 - summary.fidgetScore * 100);
-
-  return (
-    0.3 * eyeContactScore +
-    0.2 * blinkScore +
-    0.2 * stabilityScore +
-    0.2 * postureScore +
-    0.1 * fidgetScore
-  ) * 100;
 }
