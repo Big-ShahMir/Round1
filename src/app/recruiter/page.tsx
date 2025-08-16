@@ -19,7 +19,8 @@ import {
   DollarSign,
   Calendar,
   LogOut,
-  User
+  User,
+  BarChart3
 } from "lucide-react"
 import Link from "next/link"
 import { useState, useEffect } from "react"
@@ -69,6 +70,14 @@ interface Interview {
   answers: string[];
   completedAt: any;
   status: string;
+  behavioralScore?: number;
+  behavioralData?: {
+    eyeContactPct?: number;
+    blinkRatePerMin?: number;
+    lean?: string;
+    headStability?: number;
+  };
+  duration?: number;
 }
 
 function RecruiterPageContent() {
@@ -431,8 +440,21 @@ function RecruiterPageContent() {
                 {interviews.map((interview) => (
                   <div key={interview.id} className="flex items-start justify-between p-4 border border-slate-200 rounded-lg hover:shadow-md transition-shadow bg-white">
                     <div className="flex-1">
-                      <h3 className="font-semibold text-lg text-slate-900">{interview.candidateName}</h3>
-                      <p className="text-slate-600">{interview.jobTitle}</p>
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <h3 className="font-semibold text-lg text-slate-900">{interview.candidateName}</h3>
+                          <p className="text-slate-600">{interview.jobTitle}</p>
+                        </div>
+                        <div className="text-right">
+                          <Badge 
+                            variant={interview.behavioralScore && interview.behavioralScore >= 80 ? 'default' : interview.behavioralScore && interview.behavioralScore >= 60 ? 'secondary' : 'destructive'}
+                            className={interview.behavioralScore && interview.behavioralScore >= 80 ? 'bg-emerald-600' : interview.behavioralScore && interview.behavioralScore >= 60 ? 'bg-yellow-600' : 'bg-red-600'}
+                          >
+                            {interview.behavioralScore || 0}/100
+                          </Badge>
+                        </div>
+                      </div>
+                      
                       <div className="flex items-center space-x-4 mt-2 text-sm text-slate-600">
                         <span className="flex items-center space-x-1">
                           <User className="h-4 w-4 text-indigo-500" />
@@ -447,15 +469,50 @@ function RecruiterPageContent() {
                         </span>
                         <span className="flex items-center space-x-1">
                           <FileText className="h-4 w-4 text-indigo-500" />
-                          {interview.questions.length} questions
+                          {interview.questions?.length || 0} questions
                         </span>
+                        {interview.duration && (
+                          <span className="flex items-center space-x-1">
+                            <BarChart3 className="h-4 w-4 text-indigo-500" />
+                            {Math.round(interview.duration / 60)} min
+                          </span>
+                        )}
                       </div>
+
+                      {/* Behavioral Analysis Summary */}
+                      {interview.behavioralData && (
+                        <div className="mt-3 p-3 bg-slate-50 rounded-lg">
+                          <h4 className="text-sm font-medium text-slate-700 mb-2">Behavioral Analysis</h4>
+                          <div className="grid grid-cols-2 gap-3 text-xs">
+                            <div className="flex justify-between">
+                              <span className="text-slate-600">Eye Contact:</span>
+                              <span className="font-medium">{interview.behavioralData.eyeContactPct?.toFixed(0) || 0}%</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-600">Posture:</span>
+                              <Badge variant="outline" className="text-xs capitalize">
+                                {interview.behavioralData.lean || 'neutral'}
+                              </Badge>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-600">Blink Rate:</span>
+                              <span className="font-medium">{interview.behavioralData.blinkRatePerMin?.toFixed(0) || 0}/min</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-600">Stability:</span>
+                              <span className="font-medium">{interview.behavioralData.headStability ? Math.round((1 - interview.behavioralData.headStability * 1000) * 100) : 0}%</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex space-x-2">
-                      <Button size="sm" variant="outline" className="border-slate-300 text-slate-700 hover:bg-slate-50">
-                        <Eye className="mr-2 h-4 w-4" />
-                        View Interview
-                      </Button>
+                    <div className="flex flex-col space-y-2 ml-4">
+                      <Link href={`/recruiter/interview/${interview.id}`}>
+                        <Button size="sm" variant="outline" className="border-slate-300 text-slate-700 hover:bg-slate-50">
+                          <Eye className="mr-2 h-4 w-4" />
+                          View Details
+                        </Button>
+                      </Link>
                       <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 shadow-sm">
                         <Users className="mr-2 h-4 w-4" />
                         Review
