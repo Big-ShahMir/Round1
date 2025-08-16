@@ -238,6 +238,11 @@ export default function AIInterviewRoom() {
         setQuestionCategory(question.category);
         setShouldWrapUp(question.shouldWrapUp);
         setMessages(interviewService.getTranscript());
+        
+        // If this is the wrap-up question, complete the interview after the candidate answers
+        if (question.shouldWrapUp) {
+          console.log("🎯 Final question detected - interview will end after candidate's response");
+        }
       } else {
         // Interview is complete
         await completeInterview();
@@ -251,6 +256,9 @@ export default function AIInterviewRoom() {
 
   const submitAnswer = async () => {
     if (!interviewService || !currentAnswer.trim() || interviewService.isInterviewComplete()) return;
+
+    // Check if this was the final question (wrap-up question)
+    const wasFinalQuestion = shouldWrapUp;
 
     // Add candidate's answer to transcript
     interviewService.addMessage('candidate', currentAnswer.trim());
@@ -292,8 +300,14 @@ export default function AIInterviewRoom() {
     // Save state after each interaction
     interviewService.saveToStorage();
 
-    // Generate next question
-    await generateNextQuestion();
+    // If this was the final question, complete the interview
+    if (wasFinalQuestion) {
+      console.log("🎯 Final question answered - completing interview...");
+      await completeInterview();
+    } else {
+      // Generate next question
+      await generateNextQuestion();
+    }
   };
 
   const exportBehaviorData = () => {
@@ -487,7 +501,7 @@ export default function AIInterviewRoom() {
   const isInterviewComplete = interviewService?.isInterviewComplete() || false;
 
   return (
-    <div className="grid h-full min-h-[calc(100vh-8rem)] grid-cols-1 gap-6 lg:grid-cols-12">
+    <div className="grid h-full max-h-[calc(100vh-4rem)] grid-cols-1 gap-6 lg:grid-cols-12">
       {/* Left Panel: Webcam and Signals */}
       <div className="flex flex-col gap-6 lg:col-span-3">
         <Card>
@@ -671,8 +685,8 @@ export default function AIInterviewRoom() {
         )}
       </div>
 
-      {/* Middle Panel: Interview Chat */}
-      <Card className="flex flex-col lg:col-span-6">
+              {/* Middle Panel: Interview Chat */}
+        <Card className="flex flex-col lg:col-span-9 max-h-[calc(100vh-6rem)]">
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
             AI Interview
@@ -702,50 +716,52 @@ export default function AIInterviewRoom() {
             </CardDescription>
           )}
         </CardHeader>
-        <CardContent className="flex-1">
-          <ScrollArea className="h-[calc(100vh-22rem)] pr-4">
-            <div className="space-y-6">
-              {messages.map((msg, index) => (
-                <div key={index} className={cn("flex items-start gap-3", msg.speaker === 'candidate' && "flex-row-reverse")}>
-                  <Avatar>
-                    <AvatarImage src={msg.speaker === 'agent' ? undefined : "https://placehold.co/100x100.png"} alt={msg.speaker} />
-                    <AvatarFallback>{msg.speaker === 'agent' ? 'AI' : 'ME'}</AvatarFallback>
-                  </Avatar>
-                  <div className={cn("max-w-sm rounded-lg p-3 sm:max-w-md", msg.speaker === 'agent' ? 'bg-secondary' : 'bg-primary text-primary-foreground')}>
-                    <p className="text-sm">{msg.text}</p>
-                  </div>
-                </div>
-              ))}
-              {isGeneratingQuestion && (
-                <div className="flex items-start gap-3">
-                  <Avatar>
-                    <AvatarFallback>AI</AvatarFallback>
-                  </Avatar>
-                  <div className="bg-secondary rounded-lg p-3">
-                    <div className="flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      <span className="text-sm">Generating next question...</span>
+        <CardContent className="flex-1 p-0">
+          <div className="h-full flex flex-col">
+            <ScrollArea className="flex-1 px-6 py-4 max-h-[calc(100vh-16rem)]">
+              <div className="space-y-4">
+                {messages.map((msg, index) => (
+                  <div key={index} className={cn("flex items-start gap-3", msg.speaker === 'candidate' && "flex-row-reverse")}>
+                    <Avatar className="flex-shrink-0">
+                      <AvatarImage src={msg.speaker === 'agent' ? undefined : "https://placehold.co/100x100.png"} alt={msg.speaker} />
+                      <AvatarFallback>{msg.speaker === 'agent' ? 'AI' : 'ME'}</AvatarFallback>
+                    </Avatar>
+                    <div className={cn("max-w-sm rounded-lg p-3 sm:max-w-md", msg.speaker === 'agent' ? 'bg-secondary' : 'bg-primary text-primary-foreground')}>
+                      <p className="text-sm leading-relaxed">{msg.text}</p>
                     </div>
                   </div>
-                </div>
-              )}
-              {isInterviewComplete && (
-                <div className="flex items-start gap-3">
-                  <Avatar>
-                    <AvatarFallback>AI</AvatarFallback>
-                  </Avatar>
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="h-4 w-4 text-green-600" />
-                      <span className="text-sm text-green-800 font-medium">Interview completed! Your responses have been evaluated.</span>
+                ))}
+                {isGeneratingQuestion && (
+                  <div className="flex items-start gap-3">
+                    <Avatar className="flex-shrink-0">
+                      <AvatarFallback>AI</AvatarFallback>
+                    </Avatar>
+                    <div className="bg-secondary rounded-lg p-3">
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span className="text-sm">Generating next question...</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
-            </div>
-          </ScrollArea>
+                )}
+                {isInterviewComplete && (
+                  <div className="flex items-start gap-3">
+                    <Avatar className="flex-shrink-0">
+                      <AvatarFallback>AI</AvatarFallback>
+                    </Avatar>
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="h-4 w-4 text-green-600" />
+                        <span className="text-sm text-green-800 font-medium">Interview completed! Your responses have been evaluated.</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
+          </div>
         </CardContent>
-        <div className="border-t p-4">
+        <div className="border-t p-4 bg-background">
           {isInterviewComplete ? (
             <div className="text-center py-4">
               <div className="text-lg font-semibold text-green-600 mb-2">Interview Complete!</div>
@@ -768,7 +784,7 @@ export default function AIInterviewRoom() {
             <div className="relative">
               <Textarea
                 placeholder={isGeneratingQuestion ? "Generating next question..." : "Your answer..."}
-                className="resize-none pr-24"
+                className="resize-none pr-24 min-h-[80px] max-h-[120px]"
                 rows={3}
                 value={currentAnswer}
                 onChange={(e) => setCurrentAnswer(e.target.value)}
@@ -814,60 +830,7 @@ export default function AIInterviewRoom() {
         </div>
       </Card>
 
-      {/* Right Panel: Current Question */}
-      <Card className="hidden flex-col lg:col-span-3 lg:flex">
-        <CardHeader>
-          <CardTitle className="text-base">
-            {isInterviewComplete ? "Interview Summary" : "Current Question"}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex-1">
-          <ScrollArea className="h-[calc(100vh-12rem)]">
-            <div className="space-y-4 pr-4">
-              {isInterviewComplete ? (
-                <div className="space-y-4">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-green-600 mb-2">✓ Complete</div>
-                    <p className="text-sm text-muted-foreground">
-                      Your interview has been successfully completed and evaluated.
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="text-sm">
-                      <span className="font-medium">Total Questions:</span> {messages.filter(m => m.speaker === 'agent').length}
-                    </div>
-                    <div className="text-sm">
-                      <span className="font-medium">Duration:</span> {messages.length > 0 ? 
-                        Math.round((messages[messages.length - 1].timestamp.getTime() - messages[0].timestamp.getTime()) / 1000 / 60) : 0} minutes
-                    </div>
-                  </div>
-                </div>
-              ) : currentQuestion ? (
-                <div>
-                  <p className="text-sm leading-relaxed">{currentQuestion}</p>
-                  {questionCategory && (
-                    <div className="mt-4">
-                      <p className="text-xs text-muted-foreground mb-2">Category:</p>
-                      <Badge variant="outline">{questionCategory}</Badge>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-center text-muted-foreground">
-                  {isGeneratingQuestion ? (
-                    <div className="flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      <span>Generating question...</span>
-                    </div>
-                  ) : (
-                    "Waiting for question..."
-                  )}
-                </div>
-              )}
-            </div>
-          </ScrollArea>
-        </CardContent>
-      </Card>
+      
     </div>
   );
 } 
