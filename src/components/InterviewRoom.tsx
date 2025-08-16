@@ -218,6 +218,7 @@ export default function InterviewRoom() {
                   playsInline
                   muted
                   className="w-full rounded-lg bg-muted"
+                  style={{ transform: 'scaleX(-1)' }}
                 />
                 {isRecording && (
                   <Badge className="absolute top-2 left-2 bg-destructive">

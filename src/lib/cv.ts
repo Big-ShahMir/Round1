@@ -61,36 +61,53 @@ export async function loadCV() {
 export function computeFrameFeatures(faceResult: any, poseResult: any): FrameStats {
   const now = performance.now();
   
-  // Eye contact estimation via blendshapes
-  const blendshapes = faceResult?.faceBlendshapes?.[0]?.categories || [];
-  const getBlendshape = (name: string) => 
-    blendshapes.find((c: any) => c.categoryName === name)?.score ?? 0;
-
-  // Calculate eye look deviation (lower = more eye contact)
-  const lookDeviation = (
-    getBlendshape("eyeLookUpLeft") + getBlendshape("eyeLookUpRight") +
-    getBlendshape("eyeLookDownLeft") + getBlendshape("eyeLookDownRight") +
-    getBlendshape("eyeLookInLeft") + getBlendshape("eyeLookInRight") +
-    getBlendshape("eyeLookOutLeft") + getBlendshape("eyeLookOutRight")
-  ) / 8;
+  console.log("Computing frame features:", {
+    faceDetected: !!faceResult?.faceLandmarks?.length,
+    poseDetected: !!poseResult?.poseLandmarks?.length,
+    faceBlendshapes: !!faceResult?.faceBlendshapes?.length
+  });
   
-  const eyeContact = Math.max(0, 1 - lookDeviation);
-
-  // Blink detection
-  const blinkLeft = getBlendshape("eyeBlinkLeft");
-  const blinkRight = getBlendshape("eyeBlinkRight");
-  const blink = (blinkLeft + blinkRight) > 1.0 ? 1 : 0;
-
-  // Nose position for head stability (landmark index 1 ≈ nose tip)
-  const noseLandmark = faceResult?.faceLandmarks?.[0]?.[1];
-  const noseX = noseLandmark?.x ?? 0.5;
-  const noseY = noseLandmark?.y ?? 0.5;
-
-  // Posture lean calculation
-  const landmarks = poseResult?.poseLandmarks?.[0];
+  // Default values
+  let eyeContact = 0.5; // Default moderate eye contact
+  let blink = 0;
+  let noseX = 0.5;
+  let noseY = 0.5;
   let lean = 0;
   
-  if (landmarks) {
+  // Eye contact estimation via blendshapes
+  if (faceResult?.faceBlendshapes?.[0]?.categories) {
+    const blendshapes = faceResult.faceBlendshapes[0].categories;
+    const getBlendshape = (name: string) => 
+      blendshapes.find((c: any) => c.categoryName === name)?.score ?? 0;
+
+    // Calculate eye look deviation (lower = more eye contact)
+    const lookDeviation = (
+      getBlendshape("eyeLookUpLeft") + getBlendshape("eyeLookUpRight") +
+      getBlendshape("eyeLookDownLeft") + getBlendshape("eyeLookDownRight") +
+      getBlendshape("eyeLookInLeft") + getBlendshape("eyeLookInRight") +
+      getBlendshape("eyeLookOutLeft") + getBlendshape("eyeLookOutRight")
+    ) / 8;
+    
+    eyeContact = Math.max(0, Math.min(1, 1 - lookDeviation * 2)); // Amplify the signal
+
+    // Blink detection
+    const blinkLeft = getBlendshape("eyeBlinkLeft");
+    const blinkRight = getBlendshape("eyeBlinkRight");
+    blink = (blinkLeft + blinkRight) > 1.0 ? 1 : 0;
+    
+    console.log("Eye tracking:", { lookDeviation, eyeContact, blinkLeft, blinkRight });
+  }
+
+  // Nose position for head stability (landmark index 1 ≈ nose tip)
+  if (faceResult?.faceLandmarks?.[0]?.[1]) {
+    const noseLandmark = faceResult.faceLandmarks[0][1];
+    noseX = noseLandmark.x;
+    noseY = noseLandmark.y;
+  }
+
+  // Posture lean calculation
+  if (poseResult?.poseLandmarks?.[0]) {
+    const landmarks = poseResult.poseLandmarks[0];
     const leftShoulder = landmarks[11];
     const rightShoulder = landmarks[12];
     const leftHip = landmarks[23];
@@ -103,18 +120,24 @@ export function computeFrameFeatures(faceResult: any, poseResult: any): FrameSta
     }
   }
 
-  return { t: now, eyeContact, blink, noseX, noseY, lean };
+  const result = { t: now, eyeContact, blink, noseX, noseY, lean };
+  console.log("Frame features:", result);
+  return result;
 }
 
 export function aggregate(frames: FrameStats[]): CVSummary | null {
-  if (!frames.length) return null;
+  if (!frames.length) {
+    console.log("No frames to aggregate");
+    return null;
+  }
 
   const duration = (frames[frames.length - 1].t - frames[0].t) / 1000;
   
-  // Eye contact percentage (frames with >60% eye contact)
-  const eyeContactPct = 100 * (
-    frames.filter(f => f.eyeContact > 0.6).length / frames.length
-  );
+  // Eye contact percentage (average eye contact across all frames)
+  const avgEyeContact = frames.reduce((sum, f) => sum + f.eyeContact, 0) / frames.length;
+  const eyeContactPct = avgEyeContact * 100;
+  
+  console.log("Aggregating:", { frameCount: frames.length, duration, avgEyeContact, eyeContactPct });
 
   // Blink rate with debouncing
   let blinkCount = 0;
