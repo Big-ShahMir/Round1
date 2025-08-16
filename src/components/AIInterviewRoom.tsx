@@ -8,9 +8,11 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Mic, MicOff, Camera, CameraOff, Send, Loader2, BarChart2, CheckCircle } from "lucide-react";
+import { Mic, MicOff, Camera, CameraOff, Send, Loader2, BarChart2, CheckCircle, Brain, AlertTriangle } from "lucide-react";
 import { loadCV, computeFrameFeatures, aggregate, type FrameStats } from "@/lib/cv";
+import { initializeRoboflow, detectObjects, analyzeInterviewBehavior, combineAnalytics, type InterviewAnalytics } from "@/lib/roboflow";
 import { InterviewService, type InterviewMessage } from "@/lib/interview-service";
+import { scoreInterview, type ScoreInterviewInput } from "@/ai/flows/score-interview";
 import { cn } from "@/lib/utils";
 
 export default function AIInterviewRoom() {
@@ -37,6 +39,22 @@ export default function AIInterviewRoom() {
   const [currentQuestion, setCurrentQuestion] = useState<string>("");
   const [questionCategory, setQuestionCategory] = useState<string>("");
   const [shouldWrapUp, setShouldWrapUp] = useState(false);
+  
+  // Roboflow integration
+  const [isRoboflowLoaded, setIsRoboflowLoaded] = useState(false);
+  const [roboflowAnalytics, setRoboflowAnalytics] = useState<InterviewAnalytics>({
+    professionalism: 0,
+    engagement: 0,
+    alertness: 0,
+    confidence: 0,
+    distractions: [],
+    timestamp: 0
+  });
+  const [latestClassification, setLatestClassification] = useState<{
+    class: string;
+    confidence: number;
+    timestamp: number;
+  } | null>(null);
 
   // Mock data - in a real app, this would come from the job posting and candidate profile
   const mockJobData = {
@@ -97,6 +115,24 @@ export default function AIInterviewRoom() {
       streamRef.current?.getTracks().forEach(track => track.stop());
     };
   }, []);
+  
+  const loadRoboflow = async () => {
+    try {
+      console.log("Starting Roboflow load...");
+      
+      const config = {
+        apiKey: "n0zbBusTJ0qr8jlvi4DS",
+        modelEndpoint: "https://classify.roboflow.com/interview-classification-m3qja/1",
+        confidence: 0.5
+      };
+      
+      const result = await initializeRoboflow(config);
+      setIsRoboflowLoaded(true);
+      console.log("Roboflow initialized successfully:", result.demo ? 'Demo Mode' : 'API Mode');
+    } catch (error) {
+      console.warn("Roboflow not available:", error);
+    }
+  };
 
   // Generate first question when service is ready
   useEffect(() => {
@@ -105,12 +141,13 @@ export default function AIInterviewRoom() {
     }
   }, [interviewService]);
 
-  // CV feature extraction loop
+  // CV feature extraction loop with Roboflow integration
   useEffect(() => {
     if (!cvModels || !videoRef.current) return;
 
     let frameId: number;
     const frames: FrameStats[] = [];
+    let lastRoboflowTime = 0;
 
     const processFrame = () => {
       if (!videoRef.current || !isRecordingStarted) {
@@ -122,27 +159,73 @@ export default function AIInterviewRoom() {
       const timestamp = performance.now();
 
       try {
+        // MediaPipe processing
         const faceResults = cvModels.face.detectForVideo(video, timestamp);
         const poseResults = cvModels.pose.detectForVideo(video, timestamp);
         
         const frameStats = computeFrameFeatures(faceResults, poseResults);
         frames.push(frameStats);
         
-        if (frames.length % 30 === 0) {
+        // Update features more frequently for real-time feedback
+        if (frames.length % 10 === 0 || frames.length < 30) {
           setFeatures([...frames]);
+        }
+        
+        // Roboflow processing (every 2 seconds)
+        if (isRoboflowLoaded && timestamp - lastRoboflowTime > 2000) {
+          lastRoboflowTime = timestamp;
+          processRoboflowFrame(video, timestamp);
         }
       } catch (error) {
         console.error("CV processing error:", error);
       }
 
+      // Process frames faster for more responsive real-time updates
       setTimeout(() => {
         frameId = requestAnimationFrame(processFrame);
-      }, 100);
+      }, 50);
     };
 
     frameId = requestAnimationFrame(processFrame);
     return () => cancelAnimationFrame(frameId);
-  }, [cvModels, isRecordingStarted]);
+  }, [cvModels, isRecordingStarted, isRoboflowLoaded]);
+  
+  const processRoboflowFrame = async (video: HTMLVideoElement, timestamp: number) => {
+    try {
+      const result = await detectObjects(video, { confidence: 0.5 });
+      
+      if (result) {
+        // Update latest classification display
+        setLatestClassification({
+          class: result.top || 'unknown',
+          confidence: result.confidence || 0,
+          timestamp
+        });
+        
+        const analytics = analyzeInterviewBehavior(result, timestamp);
+        
+        // Combine with MediaPipe data
+        const currentFeatures = features.length > 0 ? aggregate(features) : null;
+        if (currentFeatures) {
+          const mediapipeData = {
+            eyeContact: currentFeatures.eyeContactPct / 100,
+            headStability: Math.max(0, (1 - currentFeatures.headStability * 1000)) * 100,
+            blinkRate: currentFeatures.blinkRatePerMin,
+            posture: currentFeatures.lean
+          };
+          
+          const combinedAnalytics = combineAnalytics(analytics, mediapipeData);
+          setRoboflowAnalytics(combinedAnalytics);
+        } else {
+          setRoboflowAnalytics(analytics);
+        }
+        
+        console.log("Roboflow classification:", result.top, `(${(result.confidence * 100).toFixed(1)}%)`);
+      }
+    } catch (error) {
+      console.error("Roboflow processing error:", error);
+    }
+  };
 
   const generateNextQuestion = async () => {
     if (!interviewService) return;
@@ -178,12 +261,31 @@ export default function AIInterviewRoom() {
     if (features.length > 0) {
       const cvSummary = aggregate(features);
       if (cvSummary) {
+        // Calculate more accurate metrics
+        const avgAttention = cvSummary.eyeContactPct;
+        const avgLookingAway = 100 - avgAttention;
+        const estimatedSpeakingRatio = 50; // This would be calculated from audio analysis
+        const estimatedPauses = Math.floor(cvSummary.durSec / 30);
+
         interviewService.updateBehaviorSignals({
-          attentionScoreAvg: cvSummary.eyeContactPct,
-          speakingRatio: 50, // This would be calculated from audio analysis
-          lookingAwayPctAvg: 100 - cvSummary.eyeContactPct,
-          pausesCount: 0, // This would be calculated from audio analysis
+          attentionScoreAvg: Math.round(avgAttention),
+          speakingRatio: estimatedSpeakingRatio,
+          lookingAwayPctAvg: Math.round(avgLookingAway),
+          pausesCount: estimatedPauses,
         });
+
+        // Also update Roboflow analytics if available to keep them in sync
+        if (roboflowAnalytics && cvSummary) {
+          const mediapipeData = {
+            eyeContact: cvSummary.eyeContactPct / 100,
+            headStability: Math.max(0, (1 - cvSummary.headStability * 1000)) * 100,
+            blinkRate: cvSummary.blinkRatePerMin,
+            posture: cvSummary.lean
+          };
+          
+          const combinedAnalytics = combineAnalytics(roboflowAnalytics, mediapipeData);
+          setRoboflowAnalytics(combinedAnalytics);
+        }
       }
     }
 
@@ -194,13 +296,109 @@ export default function AIInterviewRoom() {
     await generateNextQuestion();
   };
 
+  const exportBehaviorData = () => {
+    const currentFeatures = features.length > 0 ? aggregate(features) : null;
+    
+    if (!currentFeatures) {
+      console.warn("No behavioral data available for export");
+      return null;
+    }
+
+    // Calculate additional metrics for scoring
+    const avgAttention = currentFeatures.eyeContactPct;
+    const avgLookingAway = 100 - avgAttention;
+    const estimatedSpeakingRatio = 50; // Would be calculated from audio analysis
+    const estimatedPauses = Math.floor(currentFeatures.durSec / 30); // Estimate based on duration
+
+    const behaviorDataForScoring = {
+      attentionScoreAvg: Math.round(avgAttention),
+      speakingRatio: estimatedSpeakingRatio,
+      lookingAwayPctAvg: Math.round(avgLookingAway),
+      pausesCount: estimatedPauses
+    };
+
+    // Combined analytics data for comprehensive report
+    const fullBehaviorData = {
+      mediaAnalytics: {
+        eyeContact: currentFeatures.eyeContactPct,
+        headStability: Math.round((1 - currentFeatures.headStability * 1000) * 100),
+        blinkRate: currentFeatures.blinkRatePerMin,
+        posture: currentFeatures.lean,
+        fidgetScore: Math.round(currentFeatures.fidgetScore * 100)
+      },
+      roboflowAnalytics: {
+        professionalism: roboflowAnalytics.professionalism,
+        engagement: roboflowAnalytics.engagement,
+        alertness: roboflowAnalytics.alertness,
+        confidence: roboflowAnalytics.confidence,
+        distractions: roboflowAnalytics.distractions
+      },
+      scoringData: behaviorDataForScoring,
+      timestamp: new Date().toISOString(),
+      latestClassification
+    };
+
+    console.log("Exported Behavior Data:", JSON.stringify(fullBehaviorData, null, 2));
+    return fullBehaviorData;
+  };
+
   const completeInterview = async () => {
     if (!interviewService) return;
 
     setIsCompleting(true);
     try {
+      // Export behavioral data before completing
+      const behaviorData = exportBehaviorData();
+      
+      // Complete the interview to get transcript and other data
       const score = await interviewService.completeInterview();
       const interviewId = interviewService.getState().id;
+      const interviewState = interviewService.getState();
+      
+      // Prepare data for scoring flow if we have all required data
+      if (behaviorData && interviewState.transcript.length > 0) {
+        try {
+          const scoreInput: ScoreInterviewInput = {
+            job: {
+              title: "Software Engineer",
+              skillsRequired: mockJobData.skillsRequired,
+              thresholds: { overall: 70 }
+            },
+            resume: mockResume,
+            transcript: interviewState.transcript.map(msg => ({
+              speaker: msg.speaker as 'agent' | 'candidate',
+              text: msg.text
+            })),
+            behavior: behaviorData.scoringData,
+            weights: {
+              interview: 0.5,
+              resume: 0.3,
+              behavior: 0.2
+            }
+          };
+
+          console.log("🎯 Automatically sending behavioral data to scoring flow...");
+          console.log("📊 Behavioral metrics:", behaviorData.scoringData);
+          
+          const scoringResult = await scoreInterview(scoreInput);
+          console.log("✅ Interview scored successfully:", scoringResult);
+          
+          // Store comprehensive results for the report page
+          localStorage.setItem(`interview_score_${interviewId}`, JSON.stringify(scoringResult));
+          localStorage.setItem(`behavior_data_${interviewId}`, JSON.stringify(behaviorData));
+          localStorage.setItem(`full_analysis_${interviewId}`, JSON.stringify({
+            behavioral: behaviorData,
+            scoring: scoringResult,
+            timestamp: new Date().toISOString()
+          }));
+        } catch (scoringError) {
+          console.error("❌ Failed to score interview:", scoringError);
+          // Store the behavioral data anyway for debugging
+          localStorage.setItem(`behavior_data_${interviewId}`, JSON.stringify(behaviorData));
+        }
+      } else {
+        console.warn("⚠️ Insufficient data for scoring - missing behavioral data or transcript");
+      }
       
       // Save final state
       interviewService.saveToStorage();
@@ -217,6 +415,11 @@ export default function AIInterviewRoom() {
   const startBehavioralTracking = () => {
     setIsRecordingStarted(true);
     setFeatures([]);
+    
+    // Auto-load Roboflow when behavioral tracking starts
+    if (!isRoboflowLoaded) {
+      loadRoboflow();
+    }
   };
 
   const startRecording = () => {
@@ -337,6 +540,15 @@ export default function AIInterviewRoom() {
                 >
                   {cvModels ? "Start Behavioral Tracking" : "Loading CV Models..."}
                 </Button>
+                {!isRoboflowLoaded && (
+                  <Button 
+                    onClick={loadRoboflow}
+                    variant="outline"
+                    className="w-full"
+                  >
+                    Load Roboflow Analysis
+                  </Button>
+                )}
               </div>
             ) : (
               <div className="space-y-4">
@@ -371,6 +583,92 @@ export default function AIInterviewRoom() {
             )}
           </CardContent>
         </Card>
+        
+        {/* Roboflow Analytics Card */}
+        {isRoboflowLoaded && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Brain className="h-5 w-5" />
+                AI Interview Analysis
+                {latestClassification && (
+                  <div className={cn("ml-auto px-2 py-1 rounded text-xs font-medium", {
+                    "bg-green-100 text-green-700": ['professional', 'engaged', 'confident'].includes(latestClassification.class),
+                    "bg-yellow-100 text-yellow-700": ['neutral', 'calm'].includes(latestClassification.class),
+                    "bg-red-100 text-red-700": ['distracted', 'tired', 'nervous', 'unprofessional'].includes(latestClassification.class)
+                  })}>
+                    {latestClassification.class}
+                  </div>
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Professionalism</span>
+                <span className={cn("font-medium", {
+                  "text-green-600": roboflowAnalytics.professionalism >= 80,
+                  "text-yellow-600": roboflowAnalytics.professionalism >= 60,
+                  "text-red-600": roboflowAnalytics.professionalism < 60
+                })}>{Math.round(roboflowAnalytics.professionalism)}%</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Engagement</span>
+                <span className={cn("font-medium", {
+                  "text-green-600": roboflowAnalytics.engagement >= 80,
+                  "text-yellow-600": roboflowAnalytics.engagement >= 60,
+                  "text-red-600": roboflowAnalytics.engagement < 60
+                })}>{Math.round(roboflowAnalytics.engagement)}%</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Alertness</span>
+                <span className={cn("font-medium", {
+                  "text-green-600": roboflowAnalytics.alertness >= 80,
+                  "text-yellow-600": roboflowAnalytics.alertness >= 60,
+                  "text-red-600": roboflowAnalytics.alertness < 60
+                })}>{Math.round(roboflowAnalytics.alertness)}%</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Confidence</span>
+                <span className={cn("font-medium", {
+                  "text-green-600": roboflowAnalytics.confidence >= 80,
+                  "text-yellow-600": roboflowAnalytics.confidence >= 60,
+                  "text-red-600": roboflowAnalytics.confidence < 60
+                })}>{Math.round(roboflowAnalytics.confidence)}%</span>
+              </div>
+              {roboflowAnalytics.distractions.length > 0 && (
+                <div className="border-t pt-2">
+                  <div className="flex items-center gap-1 text-red-600 mb-1">
+                    <AlertTriangle className="h-3 w-3" />
+                    <span className="text-xs font-medium">Issues Detected</span>
+                  </div>
+                  <div className="space-y-1">
+                    {roboflowAnalytics.distractions.slice(0, 3).map((distraction, idx) => (
+                      <p key={idx} className="text-xs text-red-600">{distraction}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="border-t pt-2 text-xs">
+                <div className="text-muted-foreground mb-1">Latest Classification:</div>
+                {latestClassification ? (
+                  <div className="space-y-1">
+                    <div className="font-mono text-blue-600 capitalize">
+                      {latestClassification.class}
+                    </div>
+                    <div className="text-muted-foreground">
+                      {(latestClassification.confidence * 100).toFixed(1)}% confidence
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {new Date(latestClassification.timestamp).toLocaleTimeString()}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-muted-foreground">Waiting for classification...</div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Middle Panel: Interview Chat */}
