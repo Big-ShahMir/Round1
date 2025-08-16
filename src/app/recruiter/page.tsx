@@ -261,11 +261,11 @@ export default function RecruiterPage() {
                     </div>
                   </div>
                   <div className="flex space-x-2">
-                    <Button size="sm" variant="outline">
+                    <Button size="sm" variant="outline" onClick={() => window.open(`/jobs/${job.id}`, '_blank')}>
                       <Eye className="mr-2 h-4 w-4" />
                       View Details
                     </Button>
-                    <Button size="sm" variant="outline">
+                    <Button size="sm" variant="outline" onClick={() => window.open(`/jobs/${job.id}/candidates`, '_blank')}>
                       <Users className="mr-2 h-4 w-4" />
                       View Candidates
                     </Button>
@@ -312,11 +312,11 @@ export default function RecruiterPage() {
                     </div>
                   </div>
                   <div className="flex space-x-2">
-                    <Button size="sm" variant="outline">
+                    <Button size="sm" variant="outline" onClick={() => window.open(candidate.resumeUrl, '_blank')}>
                       <Download className="mr-2 h-4 w-4" />
-                      <Link href={candidate.resumeUrl}>Resume</Link>
+                      Resume
                     </Button>
-                                         <Button size="sm" className="bg-blue-600 hover:bg-blue-700">
+                    <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={() => window.open(`/candidates/${candidate.id}`, '_blank')}>
                       <Eye className="mr-2 h-4 w-4" />
                       View Profile
                     </Button>
