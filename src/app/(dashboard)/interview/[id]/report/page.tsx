@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -7,52 +8,65 @@ import { Progress } from "@/components/ui/progress"
 import { Eye } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
-import { Printer, AlertCircle, CheckCircle, Lightbulb } from "lucide-react"
+import { Printer, AlertCircle, CheckCircle, Lightbulb, Loader2 } from "lucide-react"
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis } from "recharts"
-
-const score = {
-  overall: 88,
-  pass: true,
-  summary: "The candidate provided strong, detailed examples from their experience, particularly regarding the real-time data pipeline project. They demonstrated solid technical knowledge in Kafka, Flink, and monitoring tools. Communication was clear and concise. They appear to be a strong fit for the role.",
-  skillHighlights: ["Kafka", "Apache Flink", "Real-time Processing", "System Monitoring", "Problem Solving"],
-  concerns: ["Limited experience with GraphQL, which is mentioned in the job description."],
-  redFlags: [],
-  biasCheck: { flagged: false, notes: "No bias detected." },
-  scores: {
-    interview: 92,
-    resume: 85,
-    behavior: 80,
-  }
-}
-
-const behaviorMetrics = {
-  eyeContactPct: 78,
-  blinkRatePerMin: 12,
-  headStability: 0.002,
-  lean: "neutral",
-  fidgetScore: 0.015,
-  attentionScore: 85
-};
-
-const behaviorData = [
-  { name: '0-1m', value: 95 },
-  { name: '1-2m', value: 90 },
-  { name: '2-3m', value: 98 },
-  { name: '3-4m', value: 85 },
-  { name: '4-5m', value: 91 },
-  { name: 'Eye Contact', value: behaviorMetrics.eyeContactPct },
-  { name: 'Attention', value: behaviorMetrics.attentionScore },
-  { name: 'Stability', value: Math.max(0, 100 - behaviorMetrics.headStability * 10000) },
-  { name: 'Engagement', value: behaviorMetrics.lean === "neutral" ? 100 : 70 },
-]
-
-const transcript = [
-  { speaker: "agent", text: "Thanks for your interest in the Software Engineer role. To start, can you tell me about a challenging project you've worked on and how you approached it?" },
-  { speaker: "candidate", text: "Of course. One of the most challenging projects was building a real-time data processing pipeline. We had to handle millions of events per second with low latency. My approach was to use a combination of Kafka for message queuing and Apache Flink for stream processing. We also implemented a robust monitoring and alerting system using Prometheus and Grafana to ensure reliability." },
-  { speaker: "agent", text: "That sounds impressive. Could you elaborate on the monitoring system? What specific metrics did you track?" },
-];
+import { InterviewService } from "@/lib/interview-service"
+import { useInterviewStorage } from "@/hooks/use-interview-storage"
 
 export default function ReportPage({ params }: { params: { id: string } }) {
+  const { interviewState, loading } = useInterviewStorage(params.id);
+  const [score, setScore] = useState<any>(null);
+  const [behaviorMetrics, setBehaviorMetrics] = useState<any>(null);
+  const [behaviorData, setBehaviorData] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (interviewState && interviewState.score) {
+      setScore(interviewState.score);
+      
+      // Set behavioral metrics from the interview state
+      const behavior = interviewState.behaviorSignals;
+      setBehaviorMetrics({
+        eyeContactPct: behavior.attentionScoreAvg,
+        blinkRatePerMin: behavior.blinkRatePerMin || 0,
+        headStability: behavior.headStability || 0,
+        lean: behavior.lean || 'neutral',
+        fidgetScore: behavior.fidgetScore || 0,
+        attentionScore: behavior.attentionScoreAvg,
+        behaviorScore: behavior.behaviorScore || 0
+      });
+
+      // Create behavioral data for charts
+      setBehaviorData([
+        { name: 'Eye Contact', value: behavior.attentionScoreAvg },
+        { name: 'Blink Rate', value: Math.min((behavior.blinkRatePerMin || 0) / 20 * 100, 100) },
+        { name: 'Stability', value: Math.max(0, 100 - (behavior.headStability || 0) * 10000) },
+        { name: 'Posture', value: behavior.lean === "neutral" ? 100 : 70 },
+        { name: 'Behavior Score', value: behavior.behaviorScore || 0 }
+      ]);
+    }
+  }, [interviewState]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-6 w-6 animate-spin" />
+          <span>Loading interview report...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!interviewState || !score) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold mb-2">Interview Not Found</h2>
+          <p className="text-muted-foreground">The interview report could not be loaded.</p>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between">
@@ -75,14 +89,14 @@ export default function ReportPage({ params }: { params: { id: string } }) {
           </CardContent>
         </Card>
 
-        {Object.entries(score.scores).map(([key, value]) => (
+        {Object.entries(score.scores || {}).map(([key, value]) => (
           <Card key={key}>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium capitalize">{key} Score</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{value}%</div>
-              <Progress value={value} className="mt-2 h-2" />
+              <div className="text-2xl font-bold">{value as number}%</div>
+              <Progress value={value as number} className="mt-2 h-2" />
             </CardContent>
           </Card>
         ))}
@@ -99,14 +113,14 @@ export default function ReportPage({ params }: { params: { id: string } }) {
             <div>
               <h4 className="font-semibold mb-2 flex items-center gap-2"><Lightbulb className="text-accent" /> Skill Highlights</h4>
               <div className="flex flex-wrap gap-2">
-                {score.skillHighlights.map(skill => <Badge key={skill} variant="outline">{skill}</Badge>)}
+                {(score.skillHighlights || []).map((skill: string) => <Badge key={skill} variant="outline">{skill}</Badge>)}
               </div>
             </div>
             <div>
               <h4 className="font-semibold mb-2 flex items-center gap-2"><AlertCircle className="text-destructive" /> Concerns</h4>
-              {score.concerns.length > 0 ? (
+              {(score.concerns || []).length > 0 ? (
                 <ul className="list-disc pl-5 text-sm text-muted-foreground">
-                  {score.concerns.map((c, i) => <li key={i}>{c}</li>)}
+                  {(score.concerns || []).map((c: string, i: number) => <li key={i}>{c}</li>)}
                 </ul>
               ) : <p className="text-sm text-muted-foreground">No concerns identified.</p>}
             </div>
@@ -165,7 +179,7 @@ export default function ReportPage({ params }: { params: { id: string } }) {
             <CardContent>
               <ScrollArea className="h-48">
                 <div className="space-y-4 pr-4 text-sm">
-                  {transcript.map((msg, index) => (
+                  {(interviewState.transcript || []).map((msg: any, index: number) => (
                     <div key={index}>
                       <p className="font-bold capitalize">{msg.speaker === 'agent' ? 'Interviewer' : 'You'}</p>
                       <p className="text-muted-foreground">{msg.text}</p>

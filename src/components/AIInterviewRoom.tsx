@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Mic, MicOff, Camera, CameraOff, Send, Loader2, BarChart2, CheckCircle } from "lucide-react";
-import { loadCV, computeFrameFeatures, aggregate, type FrameStats } from "@/lib/cv";
+import { loadCV, computeFrameFeatures, aggregate, computeBehaviorScore, type FrameStats } from "@/lib/cv";
 import { InterviewService, type InterviewMessage } from "@/lib/interview-service";
 import { cn } from "@/lib/utils";
 
@@ -174,18 +174,27 @@ export default function AIInterviewRoom() {
     setMessages(interviewService.getTranscript());
     setCurrentAnswer("");
 
-    // Update behavior signals if we have CV data
-    if (features.length > 0) {
-      const cvSummary = aggregate(features);
-      if (cvSummary) {
-        interviewService.updateBehaviorSignals({
-          attentionScoreAvg: cvSummary.eyeContactPct,
-          speakingRatio: 50, // This would be calculated from audio analysis
-          lookingAwayPctAvg: 100 - cvSummary.eyeContactPct,
-          pausesCount: 0, // This would be calculated from audio analysis
-        });
-      }
+      // Update behavior signals if we have CV data
+  if (features.length > 0) {
+    const cvSummary = aggregate(features);
+    if (cvSummary) {
+      // Calculate comprehensive behavioral metrics
+      const behaviorScore = computeBehaviorScore(cvSummary);
+      interviewService.updateBehaviorSignals({
+        attentionScoreAvg: cvSummary.eyeContactPct,
+        speakingRatio: 50, // This would be calculated from audio analysis
+        lookingAwayPctAvg: 100 - cvSummary.eyeContactPct,
+        pausesCount: 0, // This would be calculated from audio analysis
+        // Add additional behavioral metrics
+        blinkRatePerMin: cvSummary.blinkRatePerMin,
+        headStability: cvSummary.headStability,
+        lean: cvSummary.lean,
+        fidgetScore: cvSummary.fidgetScore,
+        behaviorScore: behaviorScore,
+        duration: cvSummary.durSec
+      });
     }
+  }
 
     // Save state after each interaction
     interviewService.saveToStorage();
@@ -374,7 +383,7 @@ export default function AIInterviewRoom() {
       </div>
 
       {/* Middle Panel: Interview Chat */}
-      <Card className="flex flex-col lg:col-span-6">
+      <Card className="flex flex-col lg:col-span-9">
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
             AI Interview
@@ -516,60 +525,7 @@ export default function AIInterviewRoom() {
         </div>
       </Card>
 
-      {/* Right Panel: Current Question */}
-      <Card className="hidden flex-col lg:col-span-3 lg:flex">
-        <CardHeader>
-          <CardTitle className="text-base">
-            {isInterviewComplete ? "Interview Summary" : "Current Question"}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex-1">
-          <ScrollArea className="h-[calc(100vh-12rem)]">
-            <div className="space-y-4 pr-4">
-              {isInterviewComplete ? (
-                <div className="space-y-4">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-green-600 mb-2">✓ Complete</div>
-                    <p className="text-sm text-muted-foreground">
-                      Your interview has been successfully completed and evaluated.
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="text-sm">
-                      <span className="font-medium">Total Questions:</span> {messages.filter(m => m.speaker === 'agent').length}
-                    </div>
-                    <div className="text-sm">
-                      <span className="font-medium">Duration:</span> {messages.length > 0 ? 
-                        Math.round((messages[messages.length - 1].timestamp.getTime() - messages[0].timestamp.getTime()) / 1000 / 60) : 0} minutes
-                    </div>
-                  </div>
-                </div>
-              ) : currentQuestion ? (
-                <div>
-                  <p className="text-sm leading-relaxed">{currentQuestion}</p>
-                  {questionCategory && (
-                    <div className="mt-4">
-                      <p className="text-xs text-muted-foreground mb-2">Category:</p>
-                      <Badge variant="outline">{questionCategory}</Badge>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-center text-muted-foreground">
-                  {isGeneratingQuestion ? (
-                    <div className="flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      <span>Generating question...</span>
-                    </div>
-                  ) : (
-                    "Waiting for question..."
-                  )}
-                </div>
-              )}
-            </div>
-          </ScrollArea>
-        </CardContent>
-      </Card>
+
     </div>
   );
 } 

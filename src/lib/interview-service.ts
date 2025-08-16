@@ -26,6 +26,12 @@ export interface InterviewState {
     speakingRatio: number;
     lookingAwayPctAvg: number;
     pausesCount: number;
+    blinkRatePerMin?: number;
+    headStability?: number;
+    lean?: string;
+    fidgetScore?: number;
+    behaviorScore?: number;
+    duration?: number;
   };
   currentQuestion?: GenerateInterviewQuestionOutput;
   maxDepth: number;
@@ -108,6 +114,21 @@ export class InterviewService {
   async completeInterview(): Promise<ScoreInterviewOutput> {
     this.state.isComplete = true;
 
+    // Calculate comprehensive behavioral metrics
+    const behaviorMetrics = {
+      attentionScoreAvg: this.state.behaviorSignals.attentionScoreAvg,
+      speakingRatio: this.state.behaviorSignals.speakingRatio,
+      lookingAwayPctAvg: this.state.behaviorSignals.lookingAwayPctAvg,
+      pausesCount: this.state.behaviorSignals.pausesCount,
+      // Additional behavioral insights
+      blinkRatePerMin: this.state.behaviorSignals.blinkRatePerMin || 0,
+      headStability: this.state.behaviorSignals.headStability || 0,
+      lean: this.state.behaviorSignals.lean || 'neutral',
+      fidgetScore: this.state.behaviorSignals.fidgetScore || 0,
+      behaviorScore: this.state.behaviorSignals.behaviorScore || 0,
+      duration: this.state.behaviorSignals.duration || 0
+    };
+
     const input: ScoreInterviewInput = {
       job: {
         title: 'Software Engineer', // This could be made configurable
@@ -121,7 +142,7 @@ export class InterviewService {
         speaker: msg.speaker,
         text: msg.text,
       })),
-      behavior: this.state.behaviorSignals,
+      behavior: behaviorMetrics,
       weights: {
         interview: 0.6,
         resume: 0.2,

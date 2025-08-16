@@ -48,6 +48,12 @@ const ScoreInterviewInputSchema = z.object({
       speakingRatio: z.number().describe('The speaking ratio.'),
       lookingAwayPctAvg: z.number().describe('The average percentage of time looking away.'),
       pausesCount: z.number().describe('The number of pauses.'),
+      blinkRatePerMin: z.number().describe('The blink rate per minute.'),
+      headStability: z.number().describe('The head stability score (lower is more stable).'),
+      lean: z.string().describe('The posture lean direction (forward/neutral/back).'),
+      fidgetScore: z.number().describe('The fidget score (movement between frames).'),
+      behaviorScore: z.number().describe('The computed behavioral score (0-100).'),
+      duration: z.number().describe('The total interview duration in seconds.'),
     })
     .describe('The behavior signals from the interview.'),
   weights: z
@@ -114,6 +120,12 @@ Average Attention Score: {{{behavior.attentionScoreAvg}}}
 Speaking Ratio: {{{behavior.speakingRatio}}}
 Average Percentage of Time Looking Away: {{{behavior.lookingAwayPctAvg}}}
 Number of Pauses: {{{behavior.pausesCount}}}
+Blink Rate per Minute: {{{behavior.blinkRatePerMin}}}
+Head Stability Score: {{{behavior.headStability}}}
+Posture Lean: {{{behavior.lean}}}
+Fidget Score: {{{behavior.fidgetScore}}}
+Computed Behavioral Score: {{{behavior.behaviorScore}}}
+Interview Duration: {{{behavior.duration}}} seconds
 
 Here are the weights for scoring:
 Interview Weight: {{{weights.interview}}}
